@@ -6,8 +6,23 @@ export enum HttpMethod {
 export enum HttpStatus {
   OK = 200,
   BadRequest = 400,
+  Unauthorized = 401,
   MethodNotAllowed = 405,
 }
+
+export const HttpHeaderJson = {
+  'Content-Type': 'application/json',
+};
+
+/**
+ * 全角空格，用于 html 中的占位符
+ */
+export const FULL_SPACE = '　';
+
+/**
+ * 使用 gpt-4-vision 时单次可传输的最多图片数量
+ */
+export const MAX_GPT_VISION_IMAGES = 9;
 
 /**
  * 角色
@@ -23,18 +38,71 @@ export enum Role {
  * ChatGPT 模型
  */
 export enum Model {
-  'gpt-3.5-turbo' = 'gpt-3.5-turbo',
-  'gpt-3.5-turbo-0301' = 'gpt-3.5-turbo-0301',
-  'gpt-4' = 'gpt-4',
-  'gpt-4-0314' = 'gpt-4-0314',
-  'gpt-4-32k' = 'gpt-4-32k',
-  'gpt-4-32k-0314' = 'gpt-4-32k-0314',
+  'gpt-4o' = 'gpt-4o',
+  'gpt-4o-mini' = 'gpt-4o-mini',
+  'o1' = 'o1',
+  'o1-preview' = 'o1-preview',
+  'o1-mini' = 'o1-mini',
 }
+
+export const AllModels = [Model['gpt-4o'], Model['gpt-4o-mini'], Model['o1'], Model['o1-preview'], Model['o1-mini']];
+
+/** 支持发送图片的模型 */
+export const VisionModels = [Model['gpt-4o'], Model['gpt-4o-mini']];
+
+export const MIN_TOKENS: Record<Model, number> = {
+  [Model['gpt-4o']]: 1000,
+  [Model['gpt-4o-mini']]: 1000,
+  [Model['o1']]: 1000,
+  [Model['o1-preview']]: 1000,
+  [Model['o1-mini']]: 1000,
+};
+
+export const MAX_TOKENS: Record<Model, number> = {
+  [Model['gpt-4o']]: 128000,
+  [Model['gpt-4o-mini']]: 128000,
+  [Model['o1']]: 200000,
+  [Model['o1-preview']]: 128000,
+  [Model['o1-mini']]: 128000,
+};
+
+export enum MessageContentType {
+  text = 'text',
+  image_url = 'image_url',
+}
+
+export interface MessageContentItemText {
+  type: MessageContentType.text;
+  text: string;
+}
+export interface MessageContentItemImageUrl {
+  type: MessageContentType.image_url;
+  image_url: {
+    url: string;
+    width: number;
+    height: number;
+  };
+}
+
+/**
+ * 结构化的 MessageContent
+ */
+export type StructuredMessageContentItem = MessageContentItemText | MessageContentItemImageUrl;
 
 /**
  * 单条消息
  */
 export interface Message {
+  isError?: boolean;
+  role: Role;
+  content: string | StructuredMessageContentItem[];
+}
+
+/**
+ * 简单文本消息
+ * @TODO 实现 isSimpleStringMessage 方法
+ */
+export interface SimpleStringMessage {
   isError?: boolean;
   role: Role;
   content: string;
@@ -104,7 +172,7 @@ export interface ChatRequest {
    */
   stop?: string | string[];
   /**
-   * 最大 token 数量
+   * tokens 限制
    */
   max_tokens?: number;
   /**
@@ -122,6 +190,8 @@ export interface ChatRequest {
    *
    * 用于惩罚模型生成频率较高的 token，从而使得生成的文本更加多样化。
    * 与 presence_penalty 相似，frequency_penalty 越高，模型生成的文本中就越不可能包含频率较高的 token。
+   *
+   * @default 0;
    */
   frequency_penalty?: number;
   /**
@@ -198,3 +268,68 @@ export interface ChatResponseError {
     type: string;
   };
 }
+
+/**
+ * /v1/models 的响应体
+ * https://platform.openai.com/docs/api-reference/models
+ */
+export interface ModelsResponse {
+  data: {
+    created: number;
+    id: Model;
+    object: 'model';
+    owned_by: 'openai';
+    parent: null;
+    permission: {
+      0: {
+        allow_create_engine: boolean;
+        allow_fine_tuning: boolean;
+        allow_logprobs: boolean;
+        allow_sampling: boolean;
+        allow_search_indices: boolean;
+        allow_view: boolean;
+        created: number;
+        group: null;
+        id: string;
+        is_blocking: boolean;
+        object: 'model_permission';
+        organization: '*';
+      };
+    };
+    root: Model;
+  }[];
+  object: 'list';
+}
+
+/**
+ * /v1/models 的响应体示例
+ */
+export const exampleModelsResponse: ModelsResponse = {
+  data: [
+    {
+      created: 1677610602,
+      id: Model['gpt-4o'],
+      object: 'model',
+      owned_by: 'openai',
+      parent: null,
+      permission: {
+        0: {
+          allow_create_engine: false,
+          allow_fine_tuning: false,
+          allow_logprobs: true,
+          allow_sampling: true,
+          allow_search_indices: false,
+          allow_view: true,
+          created: 1684434433,
+          group: null,
+          id: 'modelperm-Gsp3SyIu7GamHB3McQv3rMf5',
+          is_blocking: false,
+          object: 'model_permission',
+          organization: '*',
+        },
+      },
+      root: Model['gpt-4o'],
+    },
+  ],
+  object: 'list',
+};

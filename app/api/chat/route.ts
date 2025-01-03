@@ -3,8 +3,9 @@ import { cookies } from 'next/headers';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-import type { ChatResponseChunk, ChatResponseError } from '@/utils/constants';
-import { HttpStatus } from '@/utils/constants';
+import type { ChatResponseChunk } from '@/utils/constants';
+import { HttpHeaderJson, HttpMethod, HttpStatus } from '@/utils/constants';
+import { env } from '@/utils/env';
 import { getApiKey } from '@/utils/getApiKey';
 
 export const config = {
@@ -12,24 +13,39 @@ export const config = {
 };
 
 export async function POST(req: NextRequest) {
-  if (process.env.NODE_ENV === 'development') {
+  if (env.NODE_ENV === 'development') {
     return NextResponse.json(
       {
-        code: HttpStatus.BadRequest,
-        message:
-          '中国地区直接请求 OpenAI 接口可能导致封号，所以 dev 环境下跳过了请求。如需发送请求，请将 app/api/chat/route.ts 文件中的相关代码注释掉。',
+        error: {
+          code: HttpStatus.BadRequest,
+          message:
+            '中国地区直接请求 OpenAI 接口可能导致封号，所以 dev 环境下跳过了请求。如需发送请求，请将 app/api/chat/route.ts 文件中的相关代码注释掉。',
+        },
       },
       { status: HttpStatus.BadRequest },
     );
   }
 
-  const apiKey = getApiKey(cookies().get('apiKey')?.value ?? '');
+  const apiKey = getApiKey(cookies().get('apiKey')?.value);
 
-  const fetchResult = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
+  let apiURL = '';
+  switch (env.CHATGPT_NEXT_API_PROVIDER) {
+    case 'openai':
+      apiURL = `https://${env.CHATGPT_NEXT_API_HOST}/v1/chat/completions`;
+      break;
+    case 'azure':
+      apiURL = `${env.CHATGPT_NEXT_API_AzureAPIURL}/${env.CHATGPT_NEXT_API_AzureAPIURLPath}`;
+      break;
+    default:
+      apiURL = 'unknown';
+  }
+
+  const fetchResult = await fetch(apiURL, {
+    method: HttpMethod.POST,
     headers: {
-      'Content-Type': 'application/json',
+      ...HttpHeaderJson,
       Authorization: `Bearer ${apiKey}`,
+      'api-key': apiKey ?? '',
     },
     // 直接透传，组装逻辑完全由前端实现
     body: req.body,
@@ -37,20 +53,15 @@ export async function POST(req: NextRequest) {
 
   // 如果 fetch 返回错误
   if (!fetchResult.ok) {
-    const fetchResultJSON: ChatResponseError = await fetchResult.json();
+    // https://stackoverflow.com/a/29082416/2777142
+    // 当状态码为 401 且响应头包含 Www-Authenticate 时，浏览器会弹一个框要求输入用户名和密码，故这里需要过滤此 header
+    if (fetchResult.status === HttpStatus.Unauthorized && fetchResult.headers.get('Www-Authenticate')) {
+      const wwwAuthenticateValue = fetchResult.headers.get('Www-Authenticate') ?? '';
+      fetchResult.headers.delete('Www-Authenticate');
+      fetchResult.headers.set('X-Www-Authenticate', wwwAuthenticateValue);
+    }
 
-    return NextResponse.json(
-      {
-        // 设置兜底的 code 和 message
-        code: HttpStatus.BadRequest,
-        message: 'fetch /v1/chat/completions 错误',
-        // 如果有 error，则展开 error 中的属性，覆盖前面的 code 和 message
-        ...fetchResultJSON.error,
-        // 其他字段也需要带到前端
-        ...fetchResultJSON,
-      },
-      { status: HttpStatus.BadRequest },
-    );
+    return fetchResult;
   }
 
   // 生成一个 ReadableStream

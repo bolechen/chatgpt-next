@@ -1,22 +1,28 @@
 'use client';
 
+import classNames from 'classnames';
 import type { FC, FormEvent, KeyboardEvent } from 'react';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 
 import { ChatContext } from '@/context/ChatContext';
 import { DeviceContext } from '@/context/DeviceContext';
 import { LoginContext } from '@/context/LoginContext';
+import { SettingsContext } from '@/context/SettingsContext';
+import { VisionModels } from '@/utils/constants';
+import { readImageFile } from '@/utils/image';
 import { isDomChildren } from '@/utils/isDomChildren';
-// import { scrollToBottom } from '@/utils/scrollToBottom';
+
+import { AttachImage } from './AttachImage';
 
 export const TextareaForm: FC = () => {
   const { isMobile } = useContext(DeviceContext)!;
   const { isLogged } = useContext(LoginContext)!;
-  const { sendMessage } = useContext(ChatContext)!;
+  const { settings } = useContext(SettingsContext)!;
+  const { images, appendImages, sendMessage, abortSendMessage } = useContext(ChatContext)!;
 
   // 是否正在中文输入
   const [isComposing, setIsComposing] = useState(false);
-  const [submitDisabled, setSubmitDisabled] = useState(true);
+  const [isTextareaEmpty, setIsTextareaEmpty] = useState(true);
   const formContainerRef = useRef<HTMLDivElement>(null);
   const placeholderRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -39,14 +45,40 @@ export const TextareaForm: FC = () => {
   }, []);
 
   /**
-   * 更新 submit 按钮的 disable 态
+   * Handle pasting images into the textarea
    */
-  const updateSubmitDisabled = useCallback(() => {
+  const handlePaste = useCallback(
+    async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      // 仅在 vision 模式下支持粘贴图片
+      if (!VisionModels.includes(settings.model)) {
+        return;
+      }
+      const items = e.clipboardData?.items;
+      if (items) {
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].type.indexOf('image') === 0) {
+            const file = items[i].getAsFile();
+            if (file == null) {
+              throw new Error('Expected file');
+            }
+            const image = await readImageFile(file);
+            appendImages(image);
+          }
+        }
+      }
+    },
+    [settings, appendImages],
+  );
+
+  /**
+   * 更新 textarea 的 empty 状态
+   */
+  const updateIsTextareaEmpty = useCallback(() => {
     const value = textareaRef.current?.value?.trim();
     if (value) {
-      setSubmitDisabled(false);
+      setIsTextareaEmpty(false);
     } else {
-      setSubmitDisabled(true);
+      setIsTextareaEmpty(true);
     }
   }, []);
 
@@ -68,6 +100,11 @@ export const TextareaForm: FC = () => {
     }
   }, []);
 
+  useEffect(() => {
+    updateTextareaHeight();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [images.length]);
+
   /**
    * 输入内容触发
    */
@@ -75,15 +112,15 @@ export const TextareaForm: FC = () => {
     updateTextareaHeight();
     // 保持滚动到最底下，bug 太多，先关闭
     // scrollToBottom();
-    updateSubmitDisabled();
-  }, [updateTextareaHeight, updateSubmitDisabled]);
+    updateIsTextareaEmpty();
+  }, [updateTextareaHeight, updateIsTextareaEmpty]);
   /** 中文输入法控制 */
   const onCompositionStart = useCallback(() => setIsComposing(true), []);
   const onCompositionEnd = useCallback(() => {
     setIsComposing(false);
     // 由于 onChange 和 onCompositionEnd 的时序问题，这里也需要调用 updateSubmitDisabled
-    updateSubmitDisabled();
-  }, [updateSubmitDisabled]);
+    updateIsTextareaEmpty();
+  }, [updateIsTextareaEmpty]);
 
   /**
    * 提交表单处理
@@ -92,18 +129,16 @@ export const TextareaForm: FC = () => {
     async (e?: FormEvent<HTMLFormElement>) => {
       e?.preventDefault();
       const value = textareaRef.current?.value?.trim();
-      if (!value) {
-        return;
-      }
       // 提交后清空内容
       if (textareaRef.current?.value) {
         textareaRef.current.value = '';
       }
       updateTextareaHeight();
-      updateSubmitDisabled();
+      updateIsTextareaEmpty();
+      abortSendMessage();
       await sendMessage(value);
     },
-    [sendMessage, updateTextareaHeight, updateSubmitDisabled],
+    [sendMessage, abortSendMessage, updateTextareaHeight, updateIsTextareaEmpty],
   );
 
   /**
@@ -137,14 +172,23 @@ export const TextareaForm: FC = () => {
         <div placeholder="" className="h-10 md:h-16" ref={placeholderRef} />
       </div>
       <div
-        className={`w-inherit fixed z-10 bottom-0 px-3 pt-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom))] bg-gray-100
-                   md:px-[1.75rem] md:-mx-4 md:py-4`}
+        className={`w-inherit fixed z-10 bottom-0 px-3 pt-2.5 bg-gray-100 border-t-[0.5px] border-gray
+                    pb-[calc(0.625rem+env(safe-area-inset-bottom))]
+                    md:tall:bottom-24 md:px-[1.75rem] md:-mx-4 md:py-4
+                    dark:bg-gray-900`}
         ref={formContainerRef}
         id="form-container"
       >
-        <form className="flex space-x-3" onSubmit={formOnSubmit}>
+        <form className="flex space-x-2" onSubmit={formOnSubmit}>
           <textarea
-            className="flex-grow px-3 py-2 resize-none disabled:bg-gray-200 disabled:cursor-not-allowed md:min-h-[4rem]"
+            className={classNames(
+              `flex-grow px-3 py-2 resize-none bg-chat-bubble placeholder:text-gray-400
+                disabled:bg-gray-200 disabled:cursor-not-allowed md:min-h-[4rem]
+                dark:bg-chat-bubble-dark dark:disabled:bg-gray-700 dark:placeholder:text-gray-500`,
+              {
+                'min-h-[4rem]': images.length > 0,
+              },
+            )}
             ref={textareaRef}
             disabled={!isLogged}
             placeholder={isLogged ? '' : isMobile ? '请点击右上角设置密钥' : '请点击左上角钥匙按钮设置密钥'}
@@ -152,13 +196,17 @@ export const TextareaForm: FC = () => {
             onKeyDown={onKeyDone}
             onCompositionStart={onCompositionStart}
             onCompositionEnd={onCompositionEnd}
+            onPaste={handlePaste}
             rows={1}
           />
-          <div className="flex items-center">
+          {VisionModels.includes(settings.model) && <AttachImage />}
+          <div className="flex items-end">
             <input
-              className="px-3 py-2 h-full max-h-16 bg-white disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed"
+              className={classNames('px-3 py-2 h-10 md:h-16', {
+                'h-16': images.length > 0,
+              })}
               type="submit"
-              disabled={submitDisabled}
+              disabled={isTextareaEmpty && images.length === 0}
               value="发送"
             />
           </div>

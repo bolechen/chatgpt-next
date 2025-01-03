@@ -1,8 +1,7 @@
 {
   "name": "chatgpt-next",
   "description": "微信风格的 ChatGPT，基于 Next.js 构建，私有化部署的最佳选择！",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.5.0",
   "license": "MIT",
   "scripts": {
     "dev": "next dev",
@@ -13,8 +12,27 @@
     "eslint:fix": "eslint --ext .ts,.tsx,.js --fix .",
     "prettier": "prettier -l \"./**/*\"",
     "prettier:fix": "prettier --write -l \"./**/*\"",
-    "prepare": "husky install"
+    "prepare": "husky install",
+    "preversion": "npm run build && rimraf .next/cache",
+    "postversion": "git push --follow-tags && npm publish"
   },
+  "bin": {
+    "chatgpt-next": "./bin.js"
+  },
+  "files": [
+    ".next",
+    "app",
+    "public",
+    "bin.js",
+    "LICENSE",
+    "next.config.js",
+    "package.json",
+    "pnpm-lock.yaml",
+    "postcss.config.js",
+    "README.md",
+    "tailwind.config.js",
+    "tsconfig.json"
+  ],
   "lint-staged": {
     "*.{ts,tsx,js}": [
       "eslint",
@@ -26,6 +44,7 @@
   },
   "dependencies": {
     "@heroicons/react": "2.0.16",
+    "@types/lodash.omit": "^4.5.7",
     "@types/lodash.throttle": "^4.1.7",
     "@types/markdown-it": "12.2.3",
     "@types/node": "18.15.11",
@@ -43,8 +62,10 @@
     "eslint-plugin-import": "2.27.5",
     "eventsource-parser": "^1.0.0",
     "is-mobile": "4.0.0",
+    "lodash.omit": "^4.5.0",
     "lodash.throttle": "^4.1.1",
     "markdown-it": "13.0.1",
+    "markdown-it-katex": "^2.0.3",
     "next": "13.2.4",
     "postcss": "8.4.21",
     "react": "18.2.0",
@@ -56,6 +77,7 @@
   "devDependencies": {
     "husky": "8.0.3",
     "lint-staged": "13.2.0",
-    "prettier": "2.8.7"
+    "prettier": "2.8.7",
+    "rimraf": "^5.0.1"
   }
 }

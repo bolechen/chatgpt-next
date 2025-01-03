@@ -1,10 +1,12 @@
 'use client';
 
-import type { FC } from 'react';
-import { useContext } from 'react';
+import { useContext, useEffect } from 'react';
 
 import { ChatContext } from '@/context/ChatContext';
+import { SettingsContext } from '@/context/SettingsContext';
 import { Role } from '@/utils/constants';
+// import { exampleMessages } from '@/utils/exampleMessages';
+import { initEventListenerScroll } from '@/utils/scroll';
 
 import { Message, SystemMessage } from './Message';
 
@@ -18,18 +20,32 @@ const SYSTEM_MESSAGE = (
 const WELCOME_MESSAGE = '你好！有什么我可以帮助你的吗？';
 const LOADING_MESSAGE = '正在努力思考...';
 
-export const Messages: FC = () => {
-  let { isLoading, messages, history, historyIndex, startNewChat } = useContext(ChatContext)!;
+export const Messages = () => {
+  const { settings } = useContext(SettingsContext)!;
+  let { isLoading, messages, history, historyIndex, startNewChat, abortSendMessage } = useContext(ChatContext)!;
+
+  // 初始化滚动事件
+  useEffect(initEventListenerScroll, []);
 
   // 如果当前在浏览聊天记录，则展示该聊天记录的 messages
   if (history && typeof historyIndex === 'number') {
     messages = history[historyIndex].messages;
   }
 
+  // messages = exampleMessages;
+
   return (
     <div className="md:grow" style={{ display: 'flow-root' }}>
       <SystemMessage>{SYSTEM_MESSAGE}</SystemMessage>
       <Message role={Role.assistant} content={WELCOME_MESSAGE} />
+      {!settings.model.startsWith('o1') &&
+        [...(settings.systemMessage ? [settings.systemMessage] : []), ...(settings.prefixMessages ?? [])].map(
+          (message, index) => (
+            <SystemMessage key={index}>
+              {message.role}: {message.content}
+            </SystemMessage>
+          ),
+        )}
       {messages.map((message, index) => (
         <Message key={index} {...message} />
       ))}
@@ -37,7 +53,13 @@ export const Messages: FC = () => {
       {messages.length > 1 && (
         <SystemMessage>
           连续对话会加倍消耗 tokens，
-          <a className="text-link-gray" onClick={startNewChat}>
+          <a
+            className="text-gray-link"
+            onClick={() => {
+              abortSendMessage();
+              startNewChat();
+            }}
+          >
             开启新对话
           </a>
         </SystemMessage>
